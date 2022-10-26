@@ -18,7 +18,11 @@ import { setEstimateAmtInfoInState } from "../../redux/transferSlice";
 
 import { Theme } from "../../theme";
 import { ERC20 } from "../../typechain/typechain/ERC20";
+import { ChainBridge } from "../../typechain/typechain/ChainBridge";
+
+
 import { ERC20__factory } from "../../typechain/typechain/factories/ERC20__factory";
+import { ChainBridge__factory } from "../../typechain/typechain/factories/ChainBridge__factory";
 import { ColorThemeContext } from "../../providers/ThemeProvider";
 import { useCustomContractLoader, useBigAmountDelay, useNativeETHToken } from "../../hooks";
 import arrTop from "../../images/arrTop.svg";
@@ -357,6 +361,13 @@ const TransferModal: FC<IProps> = ({ amount, receiveAmount, nonEVMReceiverAddres
     isNonEVMChain(fromChain?.id ?? 0) ? "" : tokenAddress || "",
     ERC20__factory,
   ) as ERC20 | undefined;
+
+  const bridgeContract = useCustomContractLoader(
+    provider,
+    bridge?.address,
+    ChainBridge__factory,
+  ) as ChainBridge | undefined;
+
   const [transferSuccess, setTransferSuccess] = useState<boolean>(false);
   const [transfState, setTransfState] = useState<TransferHistoryStatus | "bridgeRateUpdated" | "transfer">(TRANSFER);
   const [loading, setLoading] = useState(false);
@@ -428,15 +439,15 @@ const TransferModal: FC<IProps> = ({ amount, receiveAmount, nonEVMReceiverAddres
     estimateRequest.setAmt(value.toString());
     estimateRequest.setIsPegged(pegConfig.mode !== PeggedChainMode.Off || multiBurnConfig !== undefined);
 
-    const client = new WebClient(`${process.env.REACT_APP_GRPC_SERVER_URL}`, null, null);
-    const res = await client.estimateAmt(estimateRequest, null);
-    if (pegConfig.mode === PeggedChainMode.Off && multiBurnConfig === undefined) {
-      if (res.getBridgeRate() !== estimateAmtInfoInState?.bridgeRate) {
-        setNewEstimateAmtInfoInState(res.toObject());
-        setTransfState(BRIDGE_RATE_UPDATED);
-        return;
-      }
-    }
+    // const client = new WebClient(`${process.env.REACT_APP_GRPC_SERVER_URL}`, null, null);
+    // const res = await client.estimateAmt(estimateRequest, null);
+    // if (pegConfig.mode === PeggedChainMode.Off && multiBurnConfig === undefined) {
+    //   if (res.getBridgeRate() !== estimateAmtInfoInState?.bridgeRate) {
+    //     setNewEstimateAmtInfoInState(res.toObject());
+    //     setTransfState(BRIDGE_RATE_UPDATED);
+    //     return;
+    //   }
+    // }
 
     const fromChainNonEVMMode = getNonEVMMode(fromChain?.id ?? 0);
 
@@ -447,7 +458,7 @@ const TransferModal: FC<IProps> = ({ amount, receiveAmount, nonEVMReceiverAddres
 
     const isToChainNonEVM = isNonEVMChain(toChain.id ?? 0);
 
-    if (!transactor || !bridge || !tokenContract || !selectedToken?.token?.address || fromChain.id !== chainId) {
+    if (!transactor || !bridge || !tokenContract || !bridgeContract || !selectedToken?.token?.address || fromChain.id !== chainId) {
       return;
     }
 
@@ -477,218 +488,234 @@ const TransferModal: FC<IProps> = ({ amount, receiveAmount, nonEVMReceiverAddres
       return;
     }
 
-    try {
-      if (value.isZero()) {
-        return;
-      }
+    console.log("===========address: ", address, value)
+    const RESOURCE_ID="0x0000000000000000000000000000000000000000000000000000000000000000";
+    const data = '0x' +
+      ethers.utils.hexZeroPad(value.toHexString(), 32).substr(2) +    // Deposit Amount        (32 bytes)
+      ethers.utils.hexZeroPad(ethers.utils.hexlify((address.length-2)/2), 32).substr(2) +    // len(recipientAddress) (32 bytes)
+      address.substr(2);                    // recipientAddress      (?? bytes)
 
-      setLoading(true);
+    console.log(value.toHexString(), ethers.utils.hexlify((address.length-2)/2), value._hex, ethers.utils.hexZeroPad(value._hex, 32))
+    console.log(data)
+    const approveTx = await transactor(bridgeContract.deposit("0", RESOURCE_ID, data, { gasPrice: 25000000000  }));
+    console.log("approvetx: ", approveTx)
+    await approveTx.wait();
 
-      const nonce = new Date().getTime();
-      const receiverEVMCompatibleAddress = await convertNonEVMAddressToEVMCompatible(nonEVMReceiverAddress, nonEVMMode);
-      const transferId = (() => {
-        switch (pegConfig.mode) {
-          case PeggedChainMode.Deposit:
-            return ethers.utils.solidityKeccak256(
-              ["address", "address", "uint256", "uint64", "address", "uint64", "uint64"],
-              [
-                address,
-                selectedToken?.token?.address,
-                value.toString(),
-                toChain?.id.toString(),
-                isToChainNonEVM ? receiverEVMCompatibleAddress : address,
-                nonce.toString(),
-                fromChain?.id.toString(),
-              ],
-            );
-          case PeggedChainMode.BurnThenSwap:
-            return ethers.utils.solidityKeccak256(
-              ["address", "address", "uint256", "address", "uint64", "uint64"],
-              [
-                address,
-                pegConfig.config.pegged_token.token.address,
-                value.toString(),
-                isToChainNonEVM ? receiverEVMCompatibleAddress : address,
-                nonce.toString(),
-                fromChain?.id.toString(),
-              ],
-            );
-          case PeggedChainMode.Burn:
-            return ethers.utils.solidityKeccak256(
-              ["address", "address", "uint256", "address", "uint64", "uint64"],
-              [
-                address,
-                selectedToken?.token?.address,
-                value.toString(),
-                isToChainNonEVM ? receiverEVMCompatibleAddress : address,
-                nonce.toString(),
-                fromChain?.id.toString(),
-              ],
-            );
-          default:
-            /**
-             * sender: address
-             * receiver: address (与sender都是我自己)
-             * token: token.address
-             * amount: bigNumber
-             * dstChainId: toChainId
-             * nonce: 时间戳
-             * block.Chainid: fromChainId
-             */
-            return ethers.utils.solidityKeccak256(
-              ["address", "address", "address", "uint256", "uint64", "uint64", "uint64"],
-              [
-                address,
-                address,
-                selectedToken?.token?.address,
-                value.toString(),
-                toChain?.id.toString(),
-                nonce.toString(),
-                fromChain?.id.toString(),
-              ],
-            );
-        }
-      })();
+    // try {
+    //   if (value.isZero()) {
+    //     return;
+    //   }
 
-      console.log("transferId", transferId);
+    //   setLoading(true);
 
-      const executor = (wrapToken: string | undefined) => {
-        if (chainId !== fromChain?.id) {
-          throw new Error("from chain id mismatch");
-        }
+    //   const nonce = new Date().getTime();
+    //   const receiverEVMCompatibleAddress = await convertNonEVMAddressToEVMCompatible(nonEVMReceiverAddress, nonEVMMode);
+    //   const transferId = (() => {
+    //     switch (pegConfig.mode) {
+    //       case PeggedChainMode.Deposit:
+    //         return ethers.utils.solidityKeccak256(
+    //           ["address", "address", "uint256", "uint64", "address", "uint64", "uint64"],
+    //           [
+    //             address,
+    //             selectedToken?.token?.address,
+    //             value.toString(),
+    //             toChain?.id.toString(),
+    //             isToChainNonEVM ? receiverEVMCompatibleAddress : address,
+    //             nonce.toString(),
+    //             fromChain?.id.toString(),
+    //           ],
+    //         );
+    //       case PeggedChainMode.BurnThenSwap:
+    //         return ethers.utils.solidityKeccak256(
+    //           ["address", "address", "uint256", "address", "uint64", "uint64"],
+    //           [
+    //             address,
+    //             pegConfig.config.pegged_token.token.address,
+    //             value.toString(),
+    //             isToChainNonEVM ? receiverEVMCompatibleAddress : address,
+    //             nonce.toString(),
+    //             fromChain?.id.toString(),
+    //           ],
+    //         );
+    //       case PeggedChainMode.Burn:
+    //         return ethers.utils.solidityKeccak256(
+    //           ["address", "address", "uint256", "address", "uint64", "uint64"],
+    //           [
+    //             address,
+    //             selectedToken?.token?.address,
+    //             value.toString(),
+    //             isToChainNonEVM ? receiverEVMCompatibleAddress : address,
+    //             nonce.toString(),
+    //             fromChain?.id.toString(),
+    //           ],
+    //         );
+    //       default:
+    //         /**
+    //          * sender: address
+    //          * receiver: address (与sender都是我自己)
+    //          * token: token.address
+    //          * amount: bigNumber
+    //          * dstChainId: toChainId
+    //          * nonce: 时间戳
+    //          * block.Chainid: fromChainId
+    //          */
+    //         return ethers.utils.solidityKeccak256(
+    //           ["address", "address", "address", "uint256", "uint64", "uint64", "uint64"],
+    //           [
+    //             address,
+    //             address,
+    //             selectedToken?.token?.address,
+    //             value.toString(),
+    //             toChain?.id.toString(),
+    //             nonce.toString(),
+    //             fromChain?.id.toString(),
+    //           ],
+    //         );
+    //     }
+    //   })();
 
-        switch (pegConfig.mode) {
-          case PeggedChainMode.Burn:
-          case PeggedChainMode.BurnThenSwap:
-            return transactor(
-              // eslint-disable-next-line
-              peggedTokenBridge!.burn(
-                pegConfig.config.pegged_token.token.address,
-                value,
-                isToChainNonEVM ? receiverEVMCompatibleAddress : address,
-                nonce,
-              ),
-            );
-          case PeggedChainMode.Deposit:
-            // if deposit the native token like BNB on BSC,AVAX on Avalanche, call the depositNative contract instead of the deposit.
-            // what notable are Ethereum Mainnet, Celo, and BOBA chains are not supported
-            if (
-              wrapToken === pegConfig.config.org_token.token.address &&
-              (fromChain.id !== 1 && fromChain.id !== 42220, fromChain.id !== 288)
-            ) {
-              return transactor(
-                // eslint-disable-next-line
-                originalTokenVault!.depositNative(
-                  value,
-                  pegConfig.config.pegged_chain_id,
-                  isToChainNonEVM ? receiverEVMCompatibleAddress : address,
-                  nonce,
-                  { value },
-                ),
-              );
-            }
+    //   console.log("transferId", pegConfig.mode);
 
-            return transactor(
-              // eslint-disable-next-line
-              originalTokenVault!.deposit(
-                pegConfig.config.org_token.token.address,
-                value,
-                pegConfig.config.pegged_chain_id,
-                isToChainNonEVM ? receiverEVMCompatibleAddress : address,
-                nonce,
-              ),
-            );
+    //   const executor = (wrapToken: string | undefined) => {
+    //     if (chainId !== fromChain?.id) {
+    //       throw new Error("from chain id mismatch");
+    //     }
+        
+    //     switch (pegConfig.mode) {
+    //       case PeggedChainMode.Burn:
+    //       case PeggedChainMode.BurnThenSwap:
+    //         return transactor(
+    //           // eslint-disable-next-line
+    //           peggedTokenBridge!.burn(
+    //             pegConfig.config.pegged_token.token.address,
+    //             value,
+    //             isToChainNonEVM ? receiverEVMCompatibleAddress : address,
+    //             nonce,
+    //           ),
+    //         );
+    //       case PeggedChainMode.Deposit:
+    //         // if deposit the native token like BNB on BSC,AVAX on Avalanche, call the depositNative contract instead of the deposit.
+    //         // what notable are Ethereum Mainnet, Celo, and BOBA chains are not supported
+    //         if (
+    //           wrapToken === pegConfig.config.org_token.token.address &&
+    //           (fromChain.id !== 1 && fromChain.id !== 42220, fromChain.id !== 288)
+    //         ) {
+    //           return transactor(
+    //             // eslint-disable-next-line
+    //             originalTokenVault!.depositNative(
+    //               value,
+    //               pegConfig.config.pegged_chain_id,
+    //               isToChainNonEVM ? receiverEVMCompatibleAddress : address,
+    //               nonce,
+    //               { value },
+    //             ),
+    //           );
+    //         }
+    
+    //         return transactor(
+    //           // eslint-disable-next-line
+    //           originalTokenVault!.deposit(
+    //             pegConfig.config.org_token.token.address,
+    //             value,
+    //             pegConfig.config.pegged_chain_id,
+    //             isToChainNonEVM ? receiverEVMCompatibleAddress : address,
+    //             nonce,
+    //           ),
+    //         );
 
-          default:
-            if (getAddress(bridge.address) !== getAddress(getChainInfo(chainId)?.contract_addr ?? "")) {
-              throw new Error("contract addr not matched");
-            }
+    //       default:
+    //         if (getAddress(bridge.address) !== getAddress(getChainInfo(chainId)?.contract_addr ?? "")) {
+    //           throw new Error("contract addr not matched");
+    //         }
 
-            return transactor(
-              isNativeToken
-                ? bridge.sendNative(
-                    address,
-                    value,
-                    BigNumber.from(selectedToChain?.id),
-                    BigNumber.from(nonce),
-                    BigNumber.from(res.getMaxSlippage() || 0),
-                    { value },
-                  )
-                : bridge.send(
-                    address,
-                    selectedToken?.token?.address,
-                    value,
-                    BigNumber.from(selectedToChain?.id),
-                    BigNumber.from(nonce),
-                    BigNumber.from(res.getMaxSlippage() || 0),
-                  ),
-            );
-        }
-      };
+    //         return transactor(
 
-      let wrapTokenAddress;
-      try {
-        wrapTokenAddress = await originalTokenVault?.nativeWrap();
-      } catch (e) {
-        console.log("wrap token not support");
-      }
+    //         )
 
-      const transferTx = await executor(wrapTokenAddress).catch(_ => {
-        setLoading(false); // Handle transaction rejection
-        onHandleCancel();
-      });
-      if (transferTx) {
-        setTransferSuccess(true);
-        setTransfState(TransferHistoryStatus?.TRANSFER_COMPLETED);
-        const newtxStr = JSON.stringify(transferTx);
-        const newtx = JSON.parse(newtxStr);
-        if (newtx.code) {
-          setLoading(false);
-        } else {
-          const selectedToChainToken = getTokenByChainAndTokenSymbol(toChain?.id, selectedToken?.token?.symbol)?.token;
-          if (selectedToChainToken) {
-            const transferJson: TransferHistory = {
-              dst_block_tx_link: "",
-              src_send_info: {
-                amount: safeParseUnits(amount, selectedToken.token.decimal).toString(),
-                chain: fromChain,
-                token: selectedToken.token,
-              },
-              src_block_tx_link: `${getNetworkById(fromChain.id).blockExplorerUrl}/tx/${transferTx.hash}`,
-              dst_received_info: {
-                amount: safeParseUnits(receiveAmount.toString(), selectedToChainToken?.decimal).toString(),
-                chain: toChain,
-                token: selectedToChainToken,
-              },
-              srcAddress: address,
-              dstAddress: isToChainNonEVM ? nonEVMReceiverAddress : address, /// Local check only, don't use address with leading 0s. Use original address.
-              status: TransferHistoryStatus.TRANSFER_SUBMITTING,
-              transfer_id: transferId,
-              ts: nonce,
-              updateTime: nonce,
-              nonce,
-              isLocal: true,
-              txIsFailed: false,
-            };
+    //         // return transactor(
+    //         //   isNativeToken
+    //         //     ? bridge.sendNative(
+    //         //         address,
+    //         //         value,
+    //         //         BigNumber.from(selectedToChain?.id),
+    //         //         BigNumber.from(nonce),
+    //         //         BigNumber.from(res.getMaxSlippage() || 0),
+    //         //         { value },
+    //         //       )
+    //         //     : bridge.send(
+    //         //         address,
+    //         //         selectedToken?.token?.address,
+    //         //         value,
+    //         //         BigNumber.from(selectedToChain?.id),
+    //         //         BigNumber.from(nonce),
+    //         //         BigNumber.from(res.getMaxSlippage() || 0),
+    //         //       ),
+    //         // );
+    //     }
+    //   };
 
-            const localTransferListJsonStr = localStorage.getItem(storageConstants.KEY_TRANSFER_LIST_JSON);
-            let localTransferList: TransferHistory[] = [];
-            if (localTransferListJsonStr) {
-              localTransferList = JSON.parse(localTransferListJsonStr) || [];
-            }
-            localTransferList.unshift(transferJson);
-            localStorage.setItem(storageConstants.KEY_TRANSFER_LIST_JSON, JSON.stringify(localTransferList));
-          }
-        }
-      }
-    } catch (e) {
-      // Handle failure due to low gas limit setting
-      console.log("e", e);
-      clearInterval(detailInter);
-      setLoading(false);
-    } finally {
-      setLoading(false);
-    }
+    //   let wrapTokenAddress;
+    //   try {
+    //     wrapTokenAddress = await originalTokenVault?.nativeWrap();
+    //   } catch (e) {
+    //     console.log("wrap token not support");
+    //   }
+    //   const transferTx = await executor(wrapTokenAddress).catch(_ => {
+    //     setLoading(false); // Handle transaction rejection
+    //     onHandleCancel();
+    //   });
+    //   if (transferTx) {
+    //     setTransferSuccess(true);
+    //     setTransfState(TransferHistoryStatus?.TRANSFER_COMPLETED);
+    //     const newtxStr = JSON.stringify(transferTx);
+    //     const newtx = JSON.parse(newtxStr);
+    //     if (newtx.code) {
+    //       setLoading(false);
+    //     } else {
+    //       const selectedToChainToken = getTokenByChainAndTokenSymbol(toChain?.id, selectedToken?.token?.symbol)?.token;
+    //       if (selectedToChainToken) {
+    //         const transferJson: TransferHistory = {
+    //           dst_block_tx_link: "",
+    //           src_send_info: {
+    //             amount: safeParseUnits(amount, selectedToken.token.decimal).toString(),
+    //             chain: fromChain,
+    //             token: selectedToken.token,
+    //           },
+    //           src_block_tx_link: `${getNetworkById(fromChain.id).blockExplorerUrl}/tx/${transferTx.hash}`,
+    //           dst_received_info: {
+    //             amount: safeParseUnits(receiveAmount.toString(), selectedToChainToken?.decimal).toString(),
+    //             chain: toChain,
+    //             token: selectedToChainToken,
+    //           },
+    //           srcAddress: address,
+    //           dstAddress: isToChainNonEVM ? nonEVMReceiverAddress : address, /// Local check only, don't use address with leading 0s. Use original address.
+    //           status: TransferHistoryStatus.TRANSFER_SUBMITTING,
+    //           transfer_id: transferId,
+    //           ts: nonce,
+    //           updateTime: nonce,
+    //           nonce,
+    //           isLocal: true,
+    //           txIsFailed: false,
+    //         };
+
+    //         const localTransferListJsonStr = localStorage.getItem(storageConstants.KEY_TRANSFER_LIST_JSON);
+    //         let localTransferList: TransferHistory[] = [];
+    //         if (localTransferListJsonStr) {
+    //           localTransferList = JSON.parse(localTransferListJsonStr) || [];
+    //         }
+    //         localTransferList.unshift(transferJson);
+    //         localStorage.setItem(storageConstants.KEY_TRANSFER_LIST_JSON, JSON.stringify(localTransferList));
+    //       }
+    //     }
+    //   }
+    // } catch (e) {
+    //   // Handle failure due to low gas limit setting
+    //   console.log("e", e);
+    //   clearInterval(detailInter);
+    //   setLoading(false);
+    // } finally {
+    //   setLoading(false);
+    // }
   };
 
   const submitTransactionFromNonEVMChain = async (fromChainNonEVMMode: NonEVMMode) => {
@@ -1333,34 +1360,35 @@ const TransferModal: FC<IProps> = ({ amount, receiveAmount, nonEVMReceiverAddres
   let titleText = "Transfer";
   let content;
 
-  if (transfState === BRIDGE_RATE_UPDATED) {
-    content = (
-      <>
-        <TransDetail amount={amount} receiveAmount={receiveAmount} receiverAddress={nonEVMReceiverAddress} />
-        <div className={classes.modalTop}>
-          <div className={classes.transferde2}>
-            <div className={classes.warningInnerbody}>
-              <div>
-                <WarningFilled style={{ fontSize: 20, marginRight: 5, color: "#ff8f00" }} />
-                <span style={{ color: "#17171A" }}>Bridge Rate Updated</span>
-              </div>
-              <div
-                style={{ color: "#3366FF", cursor: "pointer" }}
-                onClick={() => {
-                  updateRate();
-                }}
-              >
-                Accept
-              </div>
-            </div>
-          </div>
-        </div>
-        <Button type="primary" size="large" block onClick={() => {}} className={classes.button} disabled>
-          Confirm Transfer
-        </Button>
-      </>
-    );
-  } else if (transfState === TransferHistoryStatus?.TRANSFER_COMPLETED) {
+  // if (transfState === BRIDGE_RATE_UPDATED) {
+  //   content = (
+  //     <>
+  //       <TransDetail amount={amount} receiveAmount={receiveAmount} receiverAddress={nonEVMReceiverAddress} />
+  //       <div className={classes.modalTop}>
+  //         <div className={classes.transferde2}>
+  //           <div className={classes.warningInnerbody}>
+  //             <div>
+  //               <WarningFilled style={{ fontSize: 20, marginRight: 5, color: "#ff8f00" }} />
+  //               <span style={{ color: "#17171A" }}>Bridge Rate Updated</span>
+  //             </div>
+  //             <div
+  //               style={{ color: "#3366FF", cursor: "pointer" }}
+  //               onClick={() => {
+  //                 updateRate();
+  //               }}
+  //             >
+  //               Accept
+  //             </div>
+  //           </div>
+  //         </div>
+  //       </div>
+  //       <Button type="primary" size="large" block onClick={() => {}} className={classes.button} disabled>
+  //         Confirm Transfer
+  //       </Button>
+  //     </>
+  //   );
+  // } else 
+  if (transfState === TransferHistoryStatus?.TRANSFER_COMPLETED) {
     // Relay - check your fund
     content = (
       <div>

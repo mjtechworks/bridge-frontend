@@ -1661,43 +1661,46 @@ const Transfer: FC = () => {
     return res;
   };
 
-  const estimateAmtResProcessor = (res, targetToken) => {
-    if (!res?.getErr()) {
-      dispatch(setEstimateAmtInfoInState(res.toObject()));
-      const feeBigNum = BigNumber.from(res?.getBaseFee()).add(BigNumber.from(res?.getPercFee()));
-      const totalFee = feeBigNum.toString() || "0";
-      const tgas = Number(
-        formatDecimal(totalFee, getTokenByChainAndTokenSymbol(toChain?.id, targetToken?.token?.symbol)?.token.decimal)
-          ?.split(",")
-          .join(""),
-      );
-      const targetReceiveAmounts = res.getEstimatedReceiveAmt();
-      const receiveAmounts = formatDecimal(
-        targetReceiveAmounts,
-        getTokenByChainAndTokenSymbol(toChain?.id, targetToken?.token?.symbol)?.token.decimal,
-      )
-        ?.split(",")
-        .join("");
-      setFee(tgas);
-      setReceiveAmount(Number(receiveAmounts));
-      setNoTokenOnDst(false);
-    } else {
-      const response = res.toObject();
-      if (
-        response.err?.code === ErrCode.ERROR_NO_TOKEN_ON_DST_CHAIN ||
-        response.err?.code === ErrCode.ERROR_NO_TOKEN_ON_SRC_CHAIN
-      ) {
-        setTokenEnabled(false);
-      }
-      if (response.err?.code === ErrCode.ERROR_CODE_NO_ENOUGH_TOKEN_ON_DST_CHAIN) {
-        setNoTokenOnDst(true);
-      } else {
-        setNoTokenOnDst(false);
-      }
-      setReceiveAmount(0);
+  const estimateAmtResProcessor = (res, targetToken, amount) => {
+    console.log("estimateAmtResProcessor")
+    // if (!res?.getErr()) {
+      // dispatch(setEstimateAmtInfoInState(res.toObject()));
+      // const feeBigNum = BigNumber.from(res?.getBaseFee()).add(BigNumber.from(res?.getPercFee()));
+      // const totalFee = feeBigNum.toString() || "0";
+      // const tgas = Number(
+      //   formatDecimal(totalFee, getTokenByChainAndTokenSymbol(toChain?.id, targetToken?.token?.symbol)?.token.decimal)
+      //     ?.split(",")
+      //     .join(""),
+      // );
+      // const targetReceiveAmounts = res.getEstimatedReceiveAmt();
+      // console.log("targetReceiveAmounts: ", targetReceiveAmounts)
+      // const receiveAmounts = formatDecimal(
+      //   targetReceiveAmounts,
+      //   getTokenByChainAndTokenSymbol(toChain?.id, targetToken?.token?.symbol)?.token.decimal,
+      // )
+      //   ?.split(",")
+      //   .join("");
       setFee(0);
-      dispatch(setEstimateAmtInfoInState(null));
-    }
+      console.log("receive amount: ", amount)
+      setReceiveAmount(amount);
+      setNoTokenOnDst(false);
+    // } else {
+    //   const response = res.toObject();
+    //   if (
+    //     response.err?.code === ErrCode.ERROR_NO_TOKEN_ON_DST_CHAIN ||
+    //     response.err?.code === ErrCode.ERROR_NO_TOKEN_ON_SRC_CHAIN
+    //   ) {
+    //     setTokenEnabled(false);
+    //   }
+    //   if (response.err?.code === ErrCode.ERROR_CODE_NO_ENOUGH_TOKEN_ON_DST_CHAIN) {
+    //     setNoTokenOnDst(true);
+    //   } else {
+    //     setNoTokenOnDst(false);
+    //   }
+    //   setReceiveAmount(0);
+    //   setFee(0);
+    //   dispatch(setEstimateAmtInfoInState(null));
+    // }
   };
 
   const debounceFn = useCallback(
@@ -1769,14 +1772,15 @@ const Transfer: FC = () => {
     if (Number(amount) > 0) {
       setLoading(true);
       try {
-        await safeguardTask(
-          pegConfig,
-          originalTokenVault,
-          originalTokenVaultV2,
-          peggedTokenBridge,
-          peggedTokenBridgeV2,
-          bridge,
-        );
+        // await safeguardTask(
+        //   pegConfig,
+        //   originalTokenVault,
+        //   originalTokenVaultV2,
+        //   peggedTokenBridge,
+        //   peggedTokenBridgeV2,
+        //   bridge,
+        // );
+
         const value = safeParseUnits(amount || "0", selectedToken?.token?.decimal);
         const res = await estimateAmt(fromChain, toChain, selectedToken, value, address, rate);
         const fromChainNonEVMMode = getNonEVMMode(fromChain?.id ?? 0);
@@ -1797,7 +1801,7 @@ const Transfer: FC = () => {
           }
         }
         setLoading(false);
-        estimateAmtResProcessor(res, selectedToken);
+        estimateAmtResProcessor(res, selectedToken, amount);
       } catch (e) {
         console.log("getRelayNodeInfo error:", e);
         setLoading(false);

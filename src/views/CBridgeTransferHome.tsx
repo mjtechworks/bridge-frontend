@@ -944,11 +944,11 @@ function CBridgeTransferHome(): JSX.Element {
           </div>
         </div>
         <Content className={classes.content}>{getViewTabs()}</Content>
-        <Footer className={classes.footer}>
+        {/* <Footer className={classes.footer}>
           <div className={classes.footerContent}>
             <FooterContent />
           </div>
-        </Footer>
+        </Footer> */}
       </Layout>
       {isChainShow && (
         <ChainList
@@ -958,9 +958,9 @@ function CBridgeTransferHome(): JSX.Element {
         />
       )}
       <HistoryModal visible={showHistoryModal} onCancel={handleCloseHistoryModal} />
-      <ProviderModal visible={showProviderModal} onCancel={handleCloseProviderModal} />
-      <FlowProviderModal visible={showFlowProviderModal} onCancel={handleCloseFlowProviderModal} />
-      <TerraProviderModal visible={showTerraProviderModal} onCancel={handleCloseTerraProviderModal} />
+      {/* <ProviderModal visible={showProviderModal} onCancel={handleCloseProviderModal} /> */}
+      {/* <FlowProviderModal visible={showFlowProviderModal} onCancel={handleCloseFlowProviderModal} /> */}
+      {/* <TerraProviderModal visible={showTerraProviderModal} onCancel={handleCloseTerraProviderModal} /> */}
     </div>
   );
 }

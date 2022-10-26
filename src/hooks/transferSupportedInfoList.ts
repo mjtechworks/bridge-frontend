@@ -35,12 +35,13 @@ export const useTransferSupportedChainList = (useAsDestinationChain: boolean): C
           return;
         }
 
-        if (twoChainBridged(id1, id2, transferConfig, multiBurnConfigs)) {
+        // if (twoChainBridged(id1, id2, transferConfig, multiBurnConfigs)) {
           bridgedIds.add(id1);
           bridgedIds.add(id2);
-        }
+        // }
       });
     });
+    console.log("allchainid: ", allChainIds, bridgedIds, chainList)
 
     const supportedChains = transferConfig.chains.filter(chain => {
       return bridgedIds.has(chain.id);
