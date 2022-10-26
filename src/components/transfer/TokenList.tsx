@@ -350,7 +350,7 @@ const TokenList: FC<IProps> = ({ onSelectToken, visible, onCancel }) => {
       return true;
     }
 
-    if (targetChainId === 43114 && tokenSymbol === "AVAX") {
+    if (targetChainId === 43113 && tokenSymbol === "WFBC") {
       return true;
     }
 
@@ -399,6 +399,10 @@ const TokenList: FC<IProps> = ({ onSelectToken, visible, onCancel }) => {
     }
 
     if(targetChainId === 16350 && tokenSymbol === "PEEL") {
+      return true;
+    }
+
+    if (targetChainId === 143 && tokenSymbol === "FBC") {
       return true;
     }
 

@@ -75,11 +75,13 @@ const transferSlice = createSlice({
       const configsWithETH = payload;
 
       const chainIds = [
-        1, // NETWORKS.mainnet.chainId,
-        42161, // NETWORKS.arbitrum.chainId,
-        10, // NETWORKS.Optimism.chainId,
-        5, // NETWORKS.goerli.chainId,
-        288, // NETWORKS.BoBa.chainId,
+        143,
+        43113
+        // 1, // NETWORKS.mainnet.chainId,
+        // 42161, // NETWORKS.arbitrum.chainId,
+        // 10, // NETWORKS.Optimism.chainId,
+        // 5, // NETWORKS.goerli.chainId,
+        // 288, // NETWORKS.BoBa.chainId,
       ];
 
       chainIds.forEach(chainId => {

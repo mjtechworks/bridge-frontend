@@ -25,15 +25,65 @@ import { WebClient } from "../proto/gateway/GatewayServiceClientPb";
 const preFix = { pathPrefix: process.env.REACT_APP_SERVER_URL }; // 域名
 console.log("preFix", preFix);
 const client = new WebClient(`${process.env.REACT_APP_GRPC_SERVER_URL}`, null, null);
-export const getTransferConfigs = (): Promise<GetTransferConfigsResponse> =>
-  axios
-    .get(`${process.env.REACT_APP_SERVER_URL}/v1/getTransferConfigsForAll`)
-    .then(res => {
-      return res.data;
-    })
-    .catch(e => {
-      console.log("error=>", e);
-    });
+export const getTransferConfigs = (): GetTransferConfigsResponse => {
+  return {
+    "chains": [{
+      "id": 43113,
+      "name": "Avalanche Fuji Testnet",
+      "icon": "https://get.celer.app/cbridge-icons/chain-icon/Avalanche.png",
+      "block_delay": 15,
+      "gas_token_symbol": "AVAX",
+      "explore_url": "https://testnet.snowtrace.io/",
+      "rpc_url": "https://api.avax.network/ext/bc/C/rpc",
+      "contract_addr": "0x26AFE867AdFa64E9A29C4d61CbA6d528E519739D",
+    },
+    {
+      "id": 143,
+      "name": "FoundationBlockchain",
+      "icon": "https://get.celer.app/cbridge-icons/chain-icon/FLOW.png",
+      "block_delay": 15,
+      "gas_token_symbol": "FBC",
+      "explore_url": "http://18.220.100.80:4000",
+      "rpc_url": "https://18.220.100.80:8545/ext/bc/2K3dcYdbS5YQR6rFz9BZ2qvb7RJALQbMe2BLyDKorBXuHiGY8Z/rpc",
+      "contract_addr": "0xD43dda8C7A07f07588C68f48e4068dDb35341cCb",
+    }],
+    "chain_token": {
+      "43113": {
+        "token": [
+          {
+            "token": {
+              "symbol": "WFBC",
+              "address": "0x8Fee8937465bB4fB5403D29d9Ee6f7BC5Cb33411",
+              "decimal": 18,
+              "xfer_disabled": false,
+            },
+            "name": "Wrapped FBC",
+            "icon": "https://get.celer.app/cbridge-icons/CRA.png",
+            "max_amt": "10000",
+          },
+        ],
+      },
+      "143": {
+        "token": [
+          {
+            "token": {
+              "symbol": "WFBC",
+              "address": "0xdA3FF497a11E209e4Ab1eE928fb5ab6875753761",
+              "decimal": 18,
+              "xfer_disabled": false,
+            },
+            "name": "Wrapped FBC",
+            "icon": "https://get.celer.app/cbridge-icons/CRA.png",
+            "max_amt": "10000",
+          },
+        ],
+      },
+    },
+    "farming_reward_contract_addr": "",
+    "pegged_pair_configs": [    
+    ]
+  }
+}
 
 export const estimateWithdrawAmt = (reqParams: EstimateWithdrawAmtRequest): Promise<EstimateWithdrawAmtResponse> => {
   return client.estimateWithdrawAmt(reqParams, null);
